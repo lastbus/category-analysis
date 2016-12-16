@@ -20,7 +20,7 @@ object categoryIndexExcutor {
       case 0 =>
         //全部
         //人气相关
-        println("category_performance_month_sale_detail")
+        println("category_performance_month_popularity")
         categoryIndex.categorySale(hiveContext)
         //sku相关
         println("category_performance_month_sku")
@@ -31,9 +31,12 @@ object categoryIndexExcutor {
         //销售相关
         println("category_performance_month_sale_detail")
         categoryIndex.categorySale(hiveContext)
+        //周期
+        println("category_performance_month_turnover_days")
+        categoryIndex.categoryPeriod(hiveContext)
       case 1 =>
         //人气相关
-        println("category_performance_month_sale_detail")
+        println("category_performance_month_popularity")
         categoryIndex.categorySale(hiveContext)
       case 2 =>
         //sku相关
@@ -47,6 +50,10 @@ object categoryIndexExcutor {
         //销售相关
         println("category_performance_month_sale_detail")
         categoryIndex.categorySale(hiveContext)
+      case 5 =>
+        //周期
+        println("category_performance_month_turnover_days")
+        categoryIndex.categoryPeriod(hiveContext)
     }
   }
 }

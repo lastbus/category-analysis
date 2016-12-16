@@ -37,21 +37,6 @@ object categoryIndex {
           if (r.isNullAt(9)) -1 else r.getLong(9), r.getString(10)))
     }.distinct().filter(_._1 != -1L).partitionBy(new HashPartitioner(10)).cache()
 
-    val categoryBrandSql = "SELECT c.category_id, c.level1_id, c.level1_name, c.level2_id, c.level2_name, " +
-      "   c.level3_id, c.level3_name,  c.level4_id, c.level4_name, c.level5_id, c.level5_name, c.product_id" +
-      "   FROM idmdata.dim_management_category c "
-    val categoryBrandRawRDD = hiveContext.sql(categoryBrandSql).map { r =>
-      ((if (r.isNullAt(11)) 1L else r.getLong(11)),
-        (if (r.isNullAt(0)) -1L else r.getLong(0),
-          if (r.isNullAt(1)) -1 else r.getLong(1), r.getString(2),
-          if (r.isNullAt(3)) -1 else r.getLong(3), r.getString(4),
-          if (r.isNullAt(5)) -1 else r.getLong(5), r.getString(6),
-          if (r.isNullAt(7)) -1 else r.getLong(7), r.getString(8),
-          if (r.isNullAt(9)) -1 else r.getLong(9), r.getString(10)))
-    }.filter(s => s._1 != 1L).map(s => (s._1.toString, s._2)).distinct().partitionBy(new HashPartitioner(10)).cache()
-
-    val goodsTotalSql = "SELECT sid, pro_sid, com_sid, brand_sid FROM sourcedata.s06_pcm_mdm_goods  UNION ALL SELECT CAST (sid AS string), CAST (pro_sid AS string), com_sid, CAST (brand_sid AS string) FROM sourcedata.s06_pcm_abandoned_goods"
-    val goodsTotal = hiveContext.sql(goodsTotalSql).rdd.map(row => (row.getString(0), row.getString(1), row.getString(2), row.getString(3)))
     val pvUvSql = "SELECT u.category_sid, v.com_sid, u.cookie_id, substring(u.event_date, 0, 7) as month FROM recommendation.user_behavior_raw_data u    " +
       " JOIN (SELECT a.sid, a.com_sid FROM sourcedata.s06_pcm_mdm_goods a UNION ALL SELECT CAST (b.sid AS string), " +
       "b.com_sid FROM  sourcedata.s06_pcm_abandoned_goods b)v ON u.goods_sid = v.sid AND u.behavior_type = '1000'"
@@ -68,16 +53,35 @@ object categoryIndex {
         .map(s => ((s._1, s._2, s._3, com_sid, month), (pv, uv)))
     }.flatMap(s => s).reduceByKey((x, y) => (x._1 + y._1, x._2 + y._2))
 
-    val saleSql = "SELECT  o.member_id, o.order_no, o.category_id, o.brand_sid, o.com_sid, substring(o.sale_time, 0, 7) month, o.sale_price, o.sale_sum, o.goods_sid  " +
-      " FROM  recommendation.order_info o where o.ORDER_STATUS NOT IN ('1001', '1029', '1100') and o.order_type_code <> '25'"
-    val saleRdd = hiveContext.sql(saleSql).rdd.map(row =>(
+    val categoryBrandSql = "SELECT c.category_id, c.level1_id, c.level1_name, c.level2_id, c.level2_name, " +
+      "   c.level3_id, c.level3_name,  c.level4_id, c.level4_name, c.level5_id, c.level5_name, c.product_id" +
+      "   FROM idmdata.dim_management_category c "
+    val categoryBrandRawRDD = hiveContext.sql(categoryBrandSql).map { r =>
+      ((if (r.isNullAt(11)) 1L else r.getLong(11)),
+        (if (r.isNullAt(0)) -1L else r.getLong(0),
+          if (r.isNullAt(1)) -1 else r.getLong(1), r.getString(2),
+          if (r.isNullAt(3)) -1 else r.getLong(3), r.getString(4),
+          if (r.isNullAt(5)) -1 else r.getLong(5), r.getString(6),
+          if (r.isNullAt(7)) -1 else r.getLong(7), r.getString(8),
+          if (r.isNullAt(9)) -1 else r.getLong(9), r.getString(10)))
+    }.filter(s => s._1 != 1L && s._2._1 != -1L).map(s => (s._1.toString, s._2)).distinct().partitionBy(new HashPartitioner(10)).cache()
+    val goodsTotalSql = "SELECT sid, pro_sid, com_sid, brand_sid FROM sourcedata.s06_pcm_mdm_goods  UNION ALL SELECT CAST (sid AS string), CAST (pro_sid AS string), com_sid, CAST (brand_sid AS string) FROM sourcedata.s06_pcm_abandoned_goods"
+    val goodsTotal = hiveContext.sql(goodsTotalSql).rdd.map(row => (row.getString(0), row.getString(1), row.getString(2), row.getString(3)))
+    val categoryGoodsRdd = goodsTotal.map(s => (s._2, (s._1, s._3, s._4))).join(categoryBrandRawRDD)
+      .map{case (pro_sid, ((goods_sid, com_sid, brand_sid), category)) => (goods_sid, (com_sid, brand_sid, category))}
+    val sql = "SELECT t1.member_id, t1.order_no, t2.brand_sid, t1.industry_sid, substring(t1.sale_time, 0, 7) month, t2.sale_price, t2.sale_sum, t2.goods_code FROM sourcedata.s03_oms_order t1 " +
+      "JOIN sourcedata.s03_oms_order_detail t2 ON t1.order_no = t2.order_no WHERE t1.order_type_code <> '25' AND t1.order_status NOT IN ('1001', '1029', '1100')"
+    val saleRdd = hiveContext.sql(sql).rdd.map(row => (
       if (row.isNullAt(0) || row.get(0).toString.equalsIgnoreCase("null")) "0" else row.getString(0),row.getString(1),
-      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) 0L else row.getLong(2),
-      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3),
-      if (row.isNullAt(4) || row.get(4).toString.equalsIgnoreCase("null")) "0" else row.getString(4), row.getString(5),
-      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6),
-      if (row.isNullAt(7) || row.get(7).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(7), row.getString(8)
-      )).filter(s => !s._1.equals("0") && s._3 != 0L && !s._4.equals("0") && !s._5.equals("0"))
+      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) "0" else row.getString(2),
+      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3), row.getString(4),
+      if (row.isNullAt(5) || row.get(5).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(5),
+      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6), row.getString(7)))
+      .map(s => (s._8, (s._1, s._2, s._3, s._4, s._5, s._6, s._7)))
+      .join(categoryGoodsRdd).map(s => (s._1, (s._2._1, s._2._2._3._1)))
+      .map{case (goods_sid, ((member_id, order_no, brand_sid, com_sid, month, sale_price, sale_sum), category_id)) =>
+        (member_id, order_no, category_id, brand_sid, com_sid, month, sale_price, sale_sum, goods_sid)
+      }
 
     //order_conversion_rate和buy_conversion_rate
     val rate = saleRdd.map(s => ((s._3, s._5, s._6), (Set(s._1), Set(s._2)))).reduceByKey((x, y) => (x._1 ++ y._1, x._2 ++ y._2))
@@ -125,12 +129,24 @@ object categoryIndex {
           if (r.isNullAt(7)) -1 else r.getLong(7), r.getString(8),
           if (r.isNullAt(9)) -1 else r.getLong(9), r.getString(10)))
     }.filter(s => s._1 != 1L && s._2._1 != -1L).map(s => (s._1.toString, s._2)).distinct().partitionBy(new HashPartitioner(10)).cache()
-
+    val sql = "SELECT t1.member_id, t1.order_no, t2.brand_sid, t1.industry_sid, substring(t1.sale_time, 0, 7) month, t2.sale_price, t2.sale_sum, t2.goods_code FROM sourcedata.s03_oms_order t1 " +
+      "JOIN sourcedata.s03_oms_order_detail t2 ON t1.order_no = t2.order_no WHERE t1.order_type_code <> '25' AND t1.order_status NOT IN ('1001', '1029', '1100')"
     val goodsTotalSql = "SELECT sid, pro_sid, com_sid, brand_sid FROM sourcedata.s06_pcm_mdm_goods  UNION ALL SELECT CAST (sid AS string), CAST (pro_sid AS string), com_sid, CAST (brand_sid AS string) FROM sourcedata.s06_pcm_abandoned_goods"
     val goodsTotal = hiveContext.sql(goodsTotalSql).rdd.map(row => (row.getString(0), row.getString(1), row.getString(2), row.getString(3)))
-
     val categoryGoodsRdd = goodsTotal.map(s => (s._2, (s._1, s._3, s._4))).join(categoryBrandRawRDD)
       .map{case (pro_sid, ((goods_sid, com_sid, brand_sid), category)) => (goods_sid, (com_sid, brand_sid, category))}
+
+    val saleRdd = hiveContext.sql(sql).rdd.map(row => (
+      if (row.isNullAt(0) || row.get(0).toString.equalsIgnoreCase("null")) "0" else row.getString(0),row.getString(1),
+      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) "0" else row.getString(2),
+      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3), row.getString(4),
+      if (row.isNullAt(5) || row.get(5).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(5),
+      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6), row.getString(7)))
+      .map(s => (s._8, (s._1, s._2, s._3, s._4, s._5, s._6, s._7)))
+      .join(categoryGoodsRdd).map(s => (s._1, (s._2._1, s._2._2._3._1)))
+      .map{case (goods_sid, ((member_id, order_no, brand_sid, com_sid, month, sale_price, sale_sum), category_id)) =>
+        (member_id, order_no, category_id, brand_sid, com_sid, month, sale_price, sale_sum, goods_sid)
+      }
 
     val goodsSql = "SELECT sid, pro_sid, com_sid FROM (SELECT a.sid, pro_sid, a.com_sid FROM sourcedata.s06_pcm_mdm_goods a " +
       "UNION ALL SELECT CAST (b.sid AS string), CAST(b.pro_sid AS string),  b.com_sid FROM sourcedata.s06_pcm_abandoned_goods b ) c "
@@ -230,16 +246,6 @@ object categoryIndex {
       .reduceByKey(_+_)
       .map(s => ((s._1._1, s._1._2, s._1._3), s._2))
 
-    val saleSql = "SELECT  o.member_id, o.order_no, o.category_id, o.brand_sid, o.com_sid, substring(o.sale_time, 0, 7) month, o.sale_price, o.sale_sum, o.goods_sid  " +
-      " FROM  recommendation.order_info o where o.ORDER_STATUS NOT IN ('1001', '1029', '1100') and o.order_type_code <> '25'"
-    val saleRdd = hiveContext.sql(saleSql).rdd.map(row =>(
-      if (row.isNullAt(0) || row.get(0).toString.equalsIgnoreCase("null")) "0" else row.getString(0),row.getString(1),
-      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) 0L else row.getLong(2),
-      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3),
-      if (row.isNullAt(4) || row.get(4).toString.equalsIgnoreCase("null")) "0" else row.getString(4), row.getString(5),
-      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6),
-      if (row.isNullAt(7) || row.get(7).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(7), row.getString(8)
-      )).filter(s => !s._1.equals("0") && s._3 != 0L && !s._4.equals("0") && !s._5.equals("0"))
 
     //eighty_percent_con_ratio
     val eightyPercentConRatio = saleRdd.map(s => ((s._3, s._5, s._6, s._9), s._7 * s._8)).reduceByKey(_+_)
@@ -335,27 +341,25 @@ object categoryIndex {
           if (r.isNullAt(9)) -1 else r.getLong(9), r.getString(10)))
     }.filter(s => s._1 != 1L && s._2._1 != -1L).map(s => (s._1.toString, s._2)).distinct().partitionBy(new HashPartitioner(10)).cache()
 
+    val sql = "SELECT t1.member_id, t1.order_no, t2.brand_sid, t1.industry_sid, substring(t1.sale_time, 0, 7) month, t2.sale_price, t2.sale_sum, t2.goods_code FROM sourcedata.s03_oms_order t1 " +
+      "JOIN sourcedata.s03_oms_order_detail t2 ON t1.order_no = t2.order_no WHERE t1.order_type_code <> '25' AND t1.order_status NOT IN ('1001', '1029', '1100')"
     val goodsTotalSql = "SELECT sid, pro_sid, com_sid, brand_sid FROM sourcedata.s06_pcm_mdm_goods  UNION ALL SELECT CAST (sid AS string), CAST (pro_sid AS string), com_sid, CAST (brand_sid AS string) FROM sourcedata.s06_pcm_abandoned_goods"
     val goodsTotal = hiveContext.sql(goodsTotalSql).rdd.map(row => (row.getString(0), row.getString(1), row.getString(2), row.getString(3)))
-
     val categoryGoodsRdd = goodsTotal.map(s => (s._2, (s._1, s._3, s._4))).join(categoryBrandRawRDD)
       .map{case (pro_sid, ((goods_sid, com_sid, brand_sid), category)) => (goods_sid, (com_sid, brand_sid, category))}
 
-
-     val goodsSql = "SELECT sid, pro_sid, com_sid FROM (SELECT a.sid, pro_sid, a.com_sid FROM sourcedata.s06_pcm_mdm_goods a " +
-      "UNION ALL SELECT CAST (b.sid AS string), CAST(b.pro_sid AS string),  b.com_sid FROM sourcedata.s06_pcm_abandoned_goods b ) c "
-    val skuSql= "SELECT DISTINCT a.goods_sid, a.sale_status, a.start_dt, a.end_dt, b.sale_stock_sum FROM pdata.t02_pcm_chan_sale_h a JOIN pdata.t02_pcm_stock_h b ON a.goods_sid = b.goods_sid "
-
-    val saleSql = "SELECT  o.member_id, o.order_no, o.category_id, o.brand_sid, o.com_sid, substring(o.sale_time, 0, 7) month, o.sale_price, o.sale_sum, o.goods_sid  " +
-      " FROM  recommendation.order_info o where o.ORDER_STATUS NOT IN ('1001', '1029', '1100') and o.order_type_code <> '25'"
-    val saleRdd = hiveContext.sql(saleSql).rdd.map(row =>(
+    val saleRdd = hiveContext.sql(sql).rdd.map(row => (
       if (row.isNullAt(0) || row.get(0).toString.equalsIgnoreCase("null")) "0" else row.getString(0),row.getString(1),
-      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) 0L else row.getLong(2),
-      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3),
-      if (row.isNullAt(4) || row.get(4).toString.equalsIgnoreCase("null")) "0" else row.getString(4), row.getString(5),
-      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6),
-      if (row.isNullAt(7) || row.get(7).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(7), row.getString(8)
-      )).filter(s => !s._1.equals("0") && s._3 != 0L && !s._4.equals("0") && !s._5.equals("0"))
+      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) "0" else row.getString(2),
+      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3), row.getString(4),
+      if (row.isNullAt(5) || row.get(5).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(5),
+      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6), row.getString(7)))
+      .map(s => (s._8, (s._1, s._2, s._3, s._4, s._5, s._6, s._7)))
+      .join(categoryGoodsRdd).map(s => (s._1, (s._2._1, s._2._2._3._1)))
+      .map{case (goods_sid, ((member_id, order_no, brand_sid, com_sid, month, sale_price, sale_sum), category_id)) =>
+        (member_id, order_no, category_id, brand_sid, com_sid, month, sale_price, sale_sum, goods_sid)
+      }
+
 
     //brand_amount
     val brandNum = categoryGoodsRdd.map(s => (s._2._3._1, s._2))
@@ -403,20 +407,43 @@ object categoryIndex {
           if (r.isNullAt(9)) -1 else r.getLong(9), r.getString(10)))
     }.distinct().partitionBy(new HashPartitioner(10)).cache()
 
+    //turnover_days
+    val categoryBrandSql = "SELECT c.category_id, c.level1_id, c.level1_name, c.level2_id, c.level2_name, " +
+      "   c.level3_id, c.level3_name,  c.level4_id, c.level4_name, c.level5_id, c.level5_name, c.product_id" +
+      "   FROM idmdata.dim_management_category c "
+    val categoryBrandRawRDD = hiveContext.sql(categoryBrandSql).map { r =>
+      ((if (r.isNullAt(11)) 1L else r.getLong(11)),
+        (if (r.isNullAt(0)) -1L else r.getLong(0),
+          if (r.isNullAt(1)) -1 else r.getLong(1), r.getString(2),
+          if (r.isNullAt(3)) -1 else r.getLong(3), r.getString(4),
+          if (r.isNullAt(5)) -1 else r.getLong(5), r.getString(6),
+          if (r.isNullAt(7)) -1 else r.getLong(7), r.getString(8),
+          if (r.isNullAt(9)) -1 else r.getLong(9), r.getString(10)))
+    }.filter(s => s._1 != 1L && s._2._1 != -1L).map(s => (s._1.toString, s._2)).distinct().partitionBy(new HashPartitioner(10)).cache()
+    val sql = "SELECT t1.member_id, t1.order_no, t2.brand_sid, t1.industry_sid, substring(t1.sale_time, 0, 7) month, t2.sale_price, t2.sale_sum, t2.goods_code FROM sourcedata.s03_oms_order t1 " +
+      "JOIN sourcedata.s03_oms_order_detail t2 ON t1.order_no = t2.order_no WHERE t1.order_type_code <> '25' AND t1.order_status NOT IN ('1001', '1029', '1100')"
     val goodsTotalSql = "SELECT sid, pro_sid, com_sid, brand_sid FROM sourcedata.s06_pcm_mdm_goods  UNION ALL SELECT CAST (sid AS string), CAST (pro_sid AS string), com_sid, CAST (brand_sid AS string) FROM sourcedata.s06_pcm_abandoned_goods"
     val goodsTotal = hiveContext.sql(goodsTotalSql).rdd.map(row => (row.getString(0), row.getString(1), row.getString(2), row.getString(3)))
+    val categoryGoodsRdd = goodsTotal.map(s => (s._2, (s._1, s._3, s._4))).join(categoryBrandRawRDD)
+      .map{case (pro_sid, ((goods_sid, com_sid, brand_sid), category)) => (goods_sid, (com_sid, brand_sid, category))}
 
-    //turnover_days
+    val saleRdd = hiveContext.sql(sql).rdd.map(row => (
+      if (row.isNullAt(0) || row.get(0).toString.equalsIgnoreCase("null")) "0" else row.getString(0),row.getString(1),
+      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) "0" else row.getString(2),
+      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3), row.getString(4),
+      if (row.isNullAt(5) || row.get(5).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(5),
+      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6), row.getString(7)))
+      .map(s => (s._8, (s._1, s._2, s._3, s._4, s._5, s._6, s._7)))
+      .join(categoryGoodsRdd).map(s => (s._1, (s._2._1, s._2._2._3._1)))
+      .map{case (goods_sid, ((member_id, order_no, brand_sid, com_sid, month, sale_price, sale_sum), category_id)) =>
+        (member_id, order_no, category_id, brand_sid, com_sid, month, sale_price, sale_sum, goods_sid)
+      }
 
-    val sqlOrder = "SELECT  o.category_id, o.goods_sid, o.com_sid, substring(o.sale_time, 0, 7) month, o.sale_sum " +
-    " FROM  recommendation.order_info o where o.ORDER_STATUS NOT IN ('1001', '1029', '1100') and o.order_type_code <> '25'"
 
-    val sqlGoods = "SELECT DISTINCT a.goods_sid, a.sale_status, a.start_dt, a.end_dt, b.sale_stock_sum, b.com_sid, b.start_dt, b.end_dt " +
+   val sqlGoods = "SELECT DISTINCT a.goods_sid, a.sale_status, a.start_dt, a.end_dt, b.sale_stock_sum, b.com_sid, b.start_dt, b.end_dt " +
       "FROM pdata.t02_pcm_chan_sale_h a JOIN (SELECT goods_sid, sale_stock_sum, com_sid, start_dt, end_dt FROM pdata.t02_pcm_stock_h " +
       "WHERE shop_sid IS NULL AND active_code IS NULL AND stock_type = 0)b ON a.goods_sid = b.goods_sid "
 
-    val orderRdd = hiveContext.sql(sqlOrder).rdd.map(row => (if (row.isNullAt(0) || row.get(0).toString.equalsIgnoreCase("null")) 0L else row.getLong(0),
-      row.getString(1), row.getString(2), row.getString(3), row.getDouble(4))).filter(s => (s._1 != 0L))
 
     val goodsTotalRdd = hiveContext.sql(sqlGoods).rdd.map(row => (row.getString(0), row.getDouble(1), row.getDate(2), row.getDate(3),
       row.getDouble(4), if (row.isNullAt(5) || row.get(5).toString.equalsIgnoreCase("null")) "0" else row.getString(5),
@@ -471,6 +498,7 @@ object categoryIndex {
           (goods_sid, array(i))
       }.flatMap(s => s).distinct().map(s => ((s._1, s._2.substring(0, 7)), 1)).reduceByKey(_+_)
 
+    val orderRdd = saleRdd.map(s => (s._3, s._9, s._5, s._6, s._8))
     val goodsSale = orderRdd.map(s => ((s._1, s._2, s._3, s._4), s._5)).reduceByKey(_+_)
       .map{case ((category_id, goods_sid, com_sid, month), sale) => ((goods_sid, month), (category_id, com_sid, sale))}
     //SELECT DISTINCT a.goods_sid, a.sale_status, a.start_dt, a.end_dt, b.sale_stock_sum, b.com_sid, b.start_dt, b.end_dt
@@ -578,14 +606,36 @@ object categoryIndex {
     val saleSql = "SELECT  o.member_id, o.order_no, o.category_id, o.brand_sid, o.com_sid, substring(o.sale_time, 0, 7) month, o.sale_price, o.sale_sum, o.goods_sid  " +
       " FROM  recommendation.order_info o where o.ORDER_STATUS NOT IN ('1001', '1029', '1100') and o.order_type_code <> '25'"
 
-    val saleRdd = hiveContext.sql(saleSql).rdd.map(row =>(
+    val categoryBrandSql = "SELECT c.category_id, c.level1_id, c.level1_name, c.level2_id, c.level2_name, " +
+      "   c.level3_id, c.level3_name,  c.level4_id, c.level4_name, c.level5_id, c.level5_name, c.product_id" +
+      "   FROM idmdata.dim_management_category c "
+    val categoryBrandRawRDD = hiveContext.sql(categoryBrandSql).map { r =>
+      ((if (r.isNullAt(11)) 1L else r.getLong(11)),
+        (if (r.isNullAt(0)) -1L else r.getLong(0),
+          if (r.isNullAt(1)) -1 else r.getLong(1), r.getString(2),
+          if (r.isNullAt(3)) -1 else r.getLong(3), r.getString(4),
+          if (r.isNullAt(5)) -1 else r.getLong(5), r.getString(6),
+          if (r.isNullAt(7)) -1 else r.getLong(7), r.getString(8),
+          if (r.isNullAt(9)) -1 else r.getLong(9), r.getString(10)))
+    }.filter(s => s._1 != 1L && s._2._1 != -1L).map(s => (s._1.toString, s._2)).distinct().partitionBy(new HashPartitioner(10)).cache()
+    val sql = "SELECT t1.member_id, t1.order_no, t2.brand_sid, t1.industry_sid, substring(t1.sale_time, 0, 7) month, t2.sale_price, t2.sale_sum, t2.goods_code FROM sourcedata.s03_oms_order t1 " +
+      "JOIN sourcedata.s03_oms_order_detail t2 ON t1.order_no = t2.order_no WHERE t1.order_type_code <> '25' AND t1.order_status NOT IN ('1001', '1029', '1100')"
+    val goodsTotalSql = "SELECT sid, pro_sid, com_sid, brand_sid FROM sourcedata.s06_pcm_mdm_goods  UNION ALL SELECT CAST (sid AS string), CAST (pro_sid AS string), com_sid, CAST (brand_sid AS string) FROM sourcedata.s06_pcm_abandoned_goods"
+    val goodsTotal = hiveContext.sql(goodsTotalSql).rdd.map(row => (row.getString(0), row.getString(1), row.getString(2), row.getString(3)))
+    val categoryGoodsRdd = goodsTotal.map(s => (s._2, (s._1, s._3, s._4))).join(categoryBrandRawRDD)
+      .map{case (pro_sid, ((goods_sid, com_sid, brand_sid), category)) => (goods_sid, (com_sid, brand_sid, category))}
+
+    val saleRdd = hiveContext.sql(sql).rdd.map(row => (
       if (row.isNullAt(0) || row.get(0).toString.equalsIgnoreCase("null")) "0" else row.getString(0),row.getString(1),
-      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) 0L else row.getLong(2),
-      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3),
-      if (row.isNullAt(4) || row.get(4).toString.equalsIgnoreCase("null")) "0" else row.getString(4), row.getString(5),
-      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6),
-      if (row.isNullAt(7) || row.get(7).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(7), row.getString(8)
-      )).filter(s => !s._1.equals("0") && s._3 != 0L && !s._4.equals("0") && !s._5.equals("0"))
+      if (row.isNullAt(2) || row.get(2).toString.equalsIgnoreCase("null")) "0" else row.getString(2),
+      if (row.isNullAt(3) || row.get(3).toString.equalsIgnoreCase("null")) "0" else row.getString(3), row.getString(4),
+      if (row.isNullAt(5) || row.get(5).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(5),
+      if (row.isNullAt(6) || row.get(6).toString.equalsIgnoreCase("null")) 0.0 else row.getDouble(6), row.getString(7)))
+      .map(s => (s._8, (s._1, s._2, s._3, s._4, s._5, s._6, s._7)))
+      .join(categoryGoodsRdd).map(s => (s._1, (s._2._1, s._2._2._3._1)))
+      .map{case (goods_sid, ((member_id, order_no, brand_sid, com_sid, month, sale_price, sale_sum), category_id)) =>
+        (member_id, order_no, category_id, brand_sid, com_sid, month, sale_price, sale_sum, goods_sid)
+      }
 
     import hiveContext.implicits._
     val saleMoney = saleRdd.map(s => (s._3, s._5, s._6, s._1, s._2, s._7, s._8, s._9))
