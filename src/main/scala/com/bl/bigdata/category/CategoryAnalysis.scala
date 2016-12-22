@@ -1,13 +1,7 @@
 package com.bl.bigdata.category
 
-
-import java.sql.Date
-
 import com.bl.bigdata.util.SparkFactory
-import org.apache.spark.sql.Row
 import org.apache.spark.sql.hive.HiveContext
-import org.apache.spark.sql.types.{IntegerType, StringType, StructField, StructType}
-import org.apache.spark.{SparkConf, SparkContext}
 
 
 /**

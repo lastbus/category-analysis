@@ -39,7 +39,7 @@ class CategoryBLYhdBrandsContrast {
     }).filter(_._2 != null)
 
     import hiveContext.implicits._
-    val blYhdBrdRdd =  blYhdBrdMapRdd.join(blBrdRdd).map(x=>{
+    val blYhdBrdRdd = blYhdBrdMapRdd.join(blBrdRdd).map(x=>{
       val blCateId = x._1
       val yhdCateId = x._2._1
       val blBrds = x._2._2

@@ -25,7 +25,7 @@ class CategoryYhdPrice {
     val blYhdCate = hiveContext.sql("select * from category.bl_category_performance_basic")
     blYhdCate.registerTempTable("blYhdCateTbl")
     val matCate = hiveContext.sql("select category_sid,yhd_category_url from blYhdCateTbl where yhd_category_url is not null")
-    matCate.registerTempTable("matCateTbl")
+      matCate.registerTempTable("matCateTbl")
     val blPriceDf = hiveContext.sql("select * from category.bl_category_performance_category_price_conf")
     blPriceDf.registerTempTable("bl_price_tbl")
     val yhdCateBLPriceDf = hiveContext.sql("select * from bl_price_tbl,matCateTbl where bl_price_tbl.category_sid = matCateTbl.category_sid and type=0").distinct

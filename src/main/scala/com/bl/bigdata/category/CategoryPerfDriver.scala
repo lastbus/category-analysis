@@ -46,7 +46,7 @@ object CategoryPerfDriver {
         CategoryStatistic.bl_category_performance_monthly_goods_shelf_sales_ratio(hiveContext)
 
         //营运
-        println("bl_category_performance_monthly_goods_shelf_sales_ratio")
+        println("bl_category_performance_category_operation")
         CategoryStatistic.bl_category_performance_category_operation(hiveContext)
 
        //百联商品价格分布

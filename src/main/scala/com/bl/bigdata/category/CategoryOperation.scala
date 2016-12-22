@@ -98,7 +98,7 @@ class CategoryOperation {
       ,(x.maxBy(_._3)._3,x.minBy(_._3)._3),(x.maxBy(_._4)._4,x.minBy(_._4)._4),(x.maxBy(_._5)._5,x.minBy(_._5)._5)))
 
 
-    val rawRdd = operRdd.map(row=>{
+      val rawRdd = operRdd.map(row=>{
       val category_sid = row.getInt(0)
       val category_name = row.getString(1)
       val level = row.getInt(2)
@@ -155,7 +155,7 @@ class CategoryOperation {
     })
 
     import hiveContext.implicits._
-    val normRdd = rawRdd.join(minMaxRdd).map(x=> {
+      val normRdd = rawRdd.join(minMaxRdd).map(x=> {
       val category_sid = x._2._1._1
       val category_name = x._2._1._2
       val level = x._2._1._3

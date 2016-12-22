@@ -17,7 +17,7 @@ class CategorySalesComp {
     val hiveContext = new HiveContext(sc)
     val sdf = new SimpleDateFormat("yyyyMMdd")
     val date0 = new Date
-    var start = sdf.format(new Date(date0.getTime - 24000L * 3600 * day))
+    var start = sdf.format(new Date(date0.getTime - 24000L * 3600 * 90))
 
     val cateSql = "SELECT DISTINCT category_id,level1_id,CASE  WHEN level2_id IS NULL THEN 0 else level2_id END AS level2_id,CASE  WHEN level3_id IS NULL THEN 0 else level3_id END AS level3_id ,CASE  WHEN level4_id IS NULL THEN 0 else level4_id END AS level4_id,CASE  WHEN level5_id IS NULL THEN 0 else level5_id END AS level5_id FROM idmdata.dim_management_category"
     val cateRdd = hiveContext.sql(cateSql).rdd.map(row => (row.getLong(0), Seq((row.getLong(1), 1), (row.getLong(2), 2), (row.getLong(3), 3), (row.getLong(4), 4), (row.getLong(5), 5))))
@@ -238,7 +238,8 @@ class CategorySalesComp {
     }.map{
       case(category_sid, level, ninety_day_sales,ninety_day_sales_ratio,norm_ninety_day_sales_ratio,ninety_day_sales_score,single_sku_sales,
       single_sku_sales_ratio, norm_single_sku_sales_ratio,single_sku_sales_score,ave_growth_rate,norm_ave_growth_rate,ave_growth_rate_score,sales_score) =>
-       CategoryPerformanceCategorySaleScore(category_sid, level, ninety_day_sales,ninety_day_sales_ratio,norm_ninety_day_sales_ratio,ninety_day_sales_score,single_sku_sales,
+
+        CategoryPerformanceCategorySaleScore(category_sid, level, ninety_day_sales,ninety_day_sales_ratio,norm_ninety_day_sales_ratio,ninety_day_sales_score,single_sku_sales,
           single_sku_sales_ratio, norm_single_sku_sales_ratio,single_sku_sales_score,ave_growth_rate,norm_ave_growth_rate,ave_growth_rate_score,sales_score, cdate)
     }.toDF().registerTempTable("saleScoreTable")
     hiveContext.sql("insert overwrite table category.bl_category_performance_category_sale_score select * from saleScoreTable")
